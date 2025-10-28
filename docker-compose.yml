@@ -1,8 +1,9 @@
-version: '3.8'
+version: '3.8' # commendlly used version
 
 services:
   nginx:
-    build: ./nginx
+    build: ./nginx # indicate the path to the Dockerfile
     ports:
-      - 80:80
-    restart: unless-stopped
+      - 80:80 # map host port 80 to container port 80
+    # restart when the container when it stops unexpectedly
+    restart: unless-stopped 
