@@ -1,0 +1,27 @@
+server {
+    listen 80; # Listen on port 80
+    location / {
+        # Serve static files from the specified directory
+        root /usr/share/nginx/html;
+        # Default file to serve
+        index index.html index.htm;
+    }
+    # Location block for forwarding API requests to the vLLM server
+    location /llm_api/ {
+        # Forward the request to the GPU server, rewriting the path.
+        # Example: /llm_api/chat -> /v1/chat
+        proxy_pass http://${GPU_SERVER_IP}:8000/v1/;
+
+        # Pass the original 'Host' header from the client to the upstream server
+        proxy_set_header Host $host;
+
+        # Pass the client's real IP address to the upstream server
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # Pass the chain of IPs the request has gone through (standard proxy header)
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Pass the original protocol (http or https) used by the client
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

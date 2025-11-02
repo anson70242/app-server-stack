@@ -7,3 +7,8 @@ services:
       - 80:80 # map host port 80 to container port 80
     # restart when the container when it stops unexpectedly
     restart: unless-stopped 
+    # For .env
+    environment:
+      # read gpu server ip from .env
+      # Create a env_ver inside Nginx container
+      - GPU_SERVER_IP=${GPU_SERVER_IP}
