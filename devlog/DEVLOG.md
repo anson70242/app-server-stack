@@ -1,7 +1,106 @@
 # App Server Stack - DevLog
 ## 2025-10-29 - Day 2
 
-**Today Goal:** Setup the vllm server, configure nginx to forward LLM api request to vllm server.
+**Today Goal 1:** Create `.env` for safety:
+
+1. Create `.env` by `vim .env`:
+
+   ```vimrc
+   GPU_SERVER_IP=#Your GPU Server IP
+   ```
+
+   
+
+2. Update `docker-compose.yml`:
+
+   ```yaml
+   version: '3.8' # commendlly used version
+   
+   services:
+     nginx:
+       build: ./nginx # indicate the path to the Dockerfile
+       ports:
+         - 80:80 # map host port 80 to container port 80
+       # restart when the container when it stops unexpectedly
+       restart: unless-stopped 
+       # For .env
+       environment:
+           # read gpu server ip from .env
+           # Create a env_ver inside Nginx container
+           - GPU_SERVER_IP=${GPU_SERVER_IP}
+   ```
+
+   
+
+3. Update `nginx/nignx.conf`:
+
+   - Rename `nginx/nignx.conf` to `nginx/default.conf.template`
+
+     ```sh
+     mv nginx/nginx.conf nginx/nginx.conf.template
+     ```
+
+   - Modify `nginx/default.conf.template`:
+
+     ```conf
+     server {
+         listen 80; # Listen on port 80
+         location / {
+             # Serve static files from the specified directory
+             root /usr/share/nginx/html;
+             # Default file to serve
+             index index.html index.htm;
+         }
+         
+         # Location block for forwarding API requests to the vLLM server
+         location /llm_api/ {
+             # Forward the request to the GPU server, rewriting the path.
+             # Example: /llm_api/chat -> /v1/chat
+             proxy_pass http://${GPU_SERVER_IP}:8000/v1/;
+     
+             # Pass the original 'Host' header from the client to the upstream server
+             proxy_set_header Host $host;
+             
+             # Pass the client's real IP address to the upstream server
+             proxy_set_header X-Real-IP $remote_addr;
+             
+             # Pass the chain of IPs the request has gone through (standard proxy header)
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+             
+             # Pass the original protocol (http or https) used by the client
+             proxy_set_header X-Forwarded-Proto $scheme;
+         }
+     }
+     ```
+
+     
+
+4. Update `nginx/Dockerfile`:
+
+   From:
+
+   ```dockerfile
+   COPY nginx.conf /etc/nginx/conf.d
+   ```
+
+   To:
+
+   ```dockerfile
+   COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
+   ```
+
+   
+
+5. Restart docker container
+
+   ```sh
+   docker-compose down
+   docker-compose up --build -d
+   ```
+
+---
+
+**Today Goal 2:** Setup the vllm server, configure nginx to forward LLM api request to vllm server.
 
 First, `ssh` to the GPU server.
 
@@ -72,15 +171,57 @@ Second, deploy vllm container:
 
 2. Use vLLM's Official Docker Image
 
+   Create a volume `hf-cache` to avoid permission problem.
+
    ```sh
-   docker run --runtime nvidia --gpus all \
-       -v ~/.cache/huggingface:/root/.cache/huggingface \
+   docker volume create hf-cache
+   ```
+
+   ```sh
+   docker run -d --runtime nvidia --gpus all \
+       -v hf-cache:/root/.cache/huggingface \
        --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
+       --env "CUDA_VISIBLE_DEVICES=1" \
        -p 8000:8000 \
        --ipc=host \
        vllm/vllm-openai:latest \
        --model Qwen/Qwen3-0.6B
    ```
+
+   For Multi GPU:
+
+   Add `--tensor-parallel-size 2` to split model into multiple GPU like `Llama 3 70B`.
+
+   Add `--data-parallel-size 2` to load whole model into each GPU for more **Throughput** like `Qwen3-0.6B`.
+
+   ***Note: A Workstation motherboard is required for multi-gpu commication.**
+
+3. Testing:
+
+   ```sh
+   curl http://GPU_Server_IP:8000/v1/chat/completions \
+       -H "Content-Type: application/json" \
+       -d '{
+           "model": "Qwen/Qwen3-0.6B",
+           "messages": [
+               {"role": "user", "content": "Hello! What is your name?"}
+           ]
+       }'
+   ```
+
+   Testing Nginx forwarding:
+
+   ```sh
+   curl http://Nginx_Server_IP/llm_api/chat/completions \
+       -H "Content-Type: application/json" \
+       -d '{
+           "model": "Qwen/Qwen3-0.6B",
+           "messages": [
+               {"role": "user", "content": "Hello! What is your name?"}
+           ]
+       }'
+
+
 
 ## 2025-10-28 - Day 1
 
