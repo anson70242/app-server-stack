@@ -8,6 +8,20 @@ server {
     }
     # Location block for forwarding API requests to the vLLM server
     location /llm_api/ {
+        # --- API Key Check ---
+        # Check if the incoming request has an 'Api-Key' HTTP Header
+        # Nginx automatically converts 'Api-Key' to the $http_api_key variable
+        #
+        # If $http_api_key (the key from the client)
+        # does not match ${LLM_API_KEY} (the key from our .env)
+        # Nginx will immediately stop processing and return 401 Unauthorized
+        if ($http_api_key != "${LLM_API_KEY}") {
+            return 401 'Unauthorized';
+        }
+        # --- End of Check ---
+
+        # (If the key is correct, Nginx continues with the settings below)
+
         # Forward the request to the GPU server, rewriting the path.
         # Example: /llm_api/chat -> /v1/chat
         proxy_pass http://${GPU_SERVER_IP}:8000/v1/;

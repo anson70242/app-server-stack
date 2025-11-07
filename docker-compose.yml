@@ -12,3 +12,4 @@ services:
       # read gpu server ip from .env
       # Create a env_ver inside Nginx container
       - GPU_SERVER_IP=${GPU_SERVER_IP}
+      - LLM_API_KEY=${LLM_API_KEY}
