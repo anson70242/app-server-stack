@@ -10,14 +10,12 @@ server {
     location /llm_api/ {
         # --- API Key Check ---
         # Check if the incoming request has an 'Api-Key' HTTP Header
-        # Nginx automatically converts 'Api-Key' to the $http_api_key variable
-        #
-        # If $http_api_key (the key from the client)
-        # does not match ${LLM_API_KEY} (the key from our .env)
-        # Nginx will immediately stop processing and return 401 Unauthorized
-        if ($http_api_key != "${LLM_API_KEY}") {
+        # Bearer means owner, tell server the following in api-key
+        set $expected_auth "Bearer ${LLM_API_KEY}";
+
+        if ($http_authorization != $expected_auth) {
             return 401 'Unauthorized';
-        }
+        } 
         # --- End of Check ---
 
         # (If the key is correct, Nginx continues with the settings below)
