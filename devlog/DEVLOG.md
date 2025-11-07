@@ -1,4 +1,127 @@
 # App Server Stack - DevLog
+## 2025-11-06 - Day 3 and 2025-11-07 - Day 4
+
+**Today Goal 1:** Switching the model to `gpt-oss-20b`
+Stop and remove the old container (if it's running):
+
+```sh
+docker stop $(docker ps -q --filter ancestor=vllm/vllm-openai:latest)
+```
+Deploy the new container for `gpt-oss-20b`:
+```sh
+docker run -d --runtime nvidia --gpus all \
+	--name my_vllm_container \
+    -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+    -v /model/huggingface/hub:/model/huggingface/hub \
+    --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
+    --env "CUDA_VISIBLE_DEVICES=1" \
+    -p 8000:8000 \
+    --ipc=host \
+    vllm/vllm-openai:latest \
+    --model unsloth/gpt-oss-20b
+```
+Add `-v /model/huggingface/hub:/model/huggingface/hub` only if your system have symlink on `~/.cache/huggingface`.
+
+---
+
+If hugging-face model having download problem:
+
+```sh
+# Manually donwload the model first
+pip uninstall hf_xet
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+# Start a new shell then:
+hf download unsloth/gpt-oss-20b
+```
+---
+Check conmtainer logs:
+```sh
+docker logs -f $(docker ps -q --filter ancestor=vllm/vllm-openai:latest)
+```
+Call the server using curl:
+```sh
+curl -X POST "http://Nginx_Server_IP/llm_api/chat/completions" \
+	-H "Content-Type: application/json" \
+	--data '{
+		"model": "unsloth/gpt-oss-20b",
+		"messages": [
+			{
+				"role": "user",
+				"content": "What is the capital of France?"
+			}
+		]
+	}'
+```
+
+
+
+**Today Goal 2:** Add API Key
+
+1. Use `openssl rand -hex 32` to generate a secret key
+
+2. Add to `.env`
+
+   ```sh
+   GPU_SERVER_IP=# Your GPU Server IP
+   LLM_API_KEY=f3a8...e9d2 # <-- here
+   ```
+
+3. Also add to `docker-compose.yml`
+
+   ```sh
+   environment:
+   - GPU_SERVER_IP=${GPU_SERVER_IP}
+   - LLM_API_KEY=${LLM_API_KEY} # <-- here
+   ```
+
+4. And `nginx/nginx.conf.template`
+
+   ```sh
+   location /llm_api/ {
+       # --- API Key Check ---
+       # Check if the incoming request has an 'Api-Key' HTTP Header
+       # Nginx automatically converts 'Api-Key' to the $http_api_key variable
+       #
+       # If $http_api_key (the key from the client)
+       # does not match ${LLM_API_KEY} (the key from our .env)
+       # Nginx will immediately stop processing and return 401 Unauthorized
+       if ($http_api_key != "${LLM_API_KEY}") {
+         return 401 'Unauthorized';
+       } 
+       # --- End of Check ---
+   
+       # (If the key is correct, Nginx continues with the settings below)
+   
+       # Forward the request to the GPU server, rewriting the path.
+       ...
+   ```
+
+5. Restart docker container:
+   ```sh
+   docker-compose down
+   docker-compose up --build -d
+   ```
+
+6. Check if `api_key` working:
+
+   ```sh
+   curl -X POST "http://Nginx_Server_IP/llm_api/chat/completions" \
+   	-H "Content-Type: application/json" \
+   	-H "Api-Key: # your api key here #" \
+   	--data '{
+   		"model": "unsloth/gpt-oss-20b",
+   		"messages": [
+   			{
+   				"role": "user",
+   				"content": "What is the capital of France?"
+   			}
+   		]
+   	}'
+   ```
+   
+   
+
 ## 2025-10-29 - Day 2
 
 **Today Goal 1:** Create `.env` for safety:
@@ -171,27 +294,21 @@ Second, deploy the  vLLm container:
 
 2. Use vLLM's Official Docker Image
 
-   Create a volume `hf-cache` to avoid permission problems when the container (running as root) writes to the host filesystem, and to better manage the cache lifecycle.
-
    ```sh
-   docker volume create hf-cache
-   ```
-
-   ```sh
-   docker run -d --runtime nvidia --gpus all \
-       -v hf-cache:/root/.cache/huggingface \
+docker run -d --runtime nvidia --gpus all \
+       -v $HOME/.cache/huggingface:/root/.cache/huggingface \
        --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
        --env "CUDA_VISIBLE_DEVICES=1" \
-       -p 8000:8000 \
+    -p 8000:8000 \
        --ipc=host \
        vllm/vllm-openai:latest \
        --model Qwen/Qwen3-0.6B
    ```
-
+   
    For Multi GPU:
-
+   
    Add `--tensor-parallel-size 2` to **split a model** into multiple GPUs like `Llama 3 70B`.
-
+   
    Add `--data-parallel-size 2` to load the whole model into each GPU for **more throughput** like `Qwen3-0.6B`.
 
    ***Note: A Workstation motherboard is required for multi-GPU communication.**
